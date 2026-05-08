@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Inkmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #faf9f5;
+    --surface: #efe9de;
+    --surface-strong: #e8e0d2;
+    --hairline: #e6dfd8;
+    --ink: #141413;
+    --body: #3d3d3a;
+    --muted: #6c6a64;
+    --subtle: #8e8b82;
+    --coral: #cc785c;
+    --coral-pressed: #a9583e;
+    --coral-soft: #e6dfd8;
+    --primary-fg: #ffffff;
+
+    --font-display: 'Cormorant Garamond', 'EB Garamond', Georgia, serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+  [data-theme="dark"] {
+    --canvas: #181715;
+    --surface: #1f1e1b;
+    --surface-strong: #252320;
+    --hairline: #2f2c2a;
+    --ink: #faf9f5;
+    --body: #d8d4cb;
+    --muted: #a09d96;
+    --subtle: #6c6a64;
+    --coral-soft: #3a2e26;
+    --primary-fg: #1d1b1a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-body);
+    color: var(--body);
+    background: var(--canvas);
+    font-size: 16px;
+    line-height: 1.7;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--hairline);
+    flex: 0 0 auto;
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin-right: auto;
+  }
+  .actions { display: flex; gap: 8px; align-items: center; }
+
+  button, .btn {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 6px 12px;
+    background: var(--canvas);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 60ms;
+  }
+  button:hover { background: var(--surface-strong); }
+  button:active { background: var(--surface-strong); }
+  button.primary {
+    background: var(--coral);
+    color: var(--primary-fg);
+    border-color: var(--coral);
+  }
+  button.primary:hover { background: var(--coral); filter: brightness(1.05); }
+  button.primary:active { background: var(--coral-pressed); border-color: var(--coral-pressed); }
+  button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 15%, transparent);
+  }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon-btn svg { width: 16px; height: 16px; stroke: var(--ink); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  .help {
+    padding: 8px 20px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    background: var(--canvas);
+    border-bottom: 1px solid var(--hairline);
+    flex: 0 0 auto;
+  }
+
+  main {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 0;
+  }
+  .pane { overflow: auto; min-height: 0; }
+  .pane.editor { border-right: 1px solid var(--hairline); }
+
+  textarea {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    outline: 0;
+    resize: none;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 22px 18px;
+    tab-size: 2;
+  }
+  textarea:focus { box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--coral) 15%, transparent); }
+
+  .preview {
+    padding: 28px 32px 60px;
+    color: var(--body);
+  }
+  .preview h1, .preview h2, .preview h3 {
+    font-family: var(--font-display);
+    color: var(--ink);
+    font-weight: 500;
+    margin: 1.6em 0 0.5em;
+  }
+  .preview h1 { font-size: 40px; letter-spacing: -0.02em; line-height: 1.1; padding-bottom: 0.25em; border-bottom: 1px solid var(--hairline); }
+  .preview h2 { font-size: 30px; letter-spacing: -0.015em; line-height: 1.2; padding-bottom: 0.25em; border-bottom: 1px solid var(--hairline); }
+  .preview h3 { font-size: 22px; letter-spacing: -0.01em; line-height: 1.3; }
+  .preview > :first-child { margin-top: 0; }
+  .preview p { margin: 1em 0; }
+  .preview a { color: var(--coral); text-decoration: none; }
+  .preview a:active { text-decoration: underline; }
+  .preview blockquote {
+    margin: 1em 0;
+    padding: 0 0 0 14px;
+    border-left: 3px solid var(--coral);
+    color: var(--muted);
+  }
+  .preview code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+  }
+  .preview pre {
+    background: var(--surface);
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+  }
+  .preview pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+  .preview ul, .preview ol { padding-left: 1.4em; }
+  .preview li { margin: 0.25em 0; }
+  .preview hr { border: 0; border-top: 1px solid var(--hairline); margin: 2em 0; }
+  .preview table { border-collapse: collapse; margin: 1em 0; }
+  .preview th, .preview td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+  .preview th { background: var(--surface); }
+
+  .ink-sketch {
+    position: relative;
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    margin: 14px 0;
+  }
+  .ink-sketch .label {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    pointer-events: none;
+  }
+  .ink-sketch svg.canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--canvas);
+    border-radius: var(--radius-sm);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .ink-sketch svg.canvas path { fill: var(--ink); stroke: none; }
+  .ink-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding: 0 2px;
+  }
+  .ink-toolbar .group { display: flex; gap: 6px; }
+  .ink-toolbar button {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  .ink-toolbar .count {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
+  .ink-error {
+    background: var(--surface);
+    border-left: 3px solid var(--coral);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin: 14px 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .ink-error strong { color: var(--ink); display: block; margin-bottom: 4px; font-family: var(--font-body); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="wordmark">Inkmark</div>
+    <div class="actions">
+      <button id="insert">Insert sketch</button>
+      <button id="load">Load</button>
+      <button id="save" class="primary">Save</button>
+      <input id="file" type="file" accept=".md,text/markdown,text/plain" hidden>
+      <button id="theme" class="icon-btn" aria-label="Toggle theme"></button>
+    </div>
+  </header>
+  <div class="help">Draw inside any <code style="font-family:var(--font-mono);font-size:11px">```ink</code> block — strokes save back into the markdown source.</div>
+  <main>
+    <div class="pane editor"><textarea id="src" spellcheck="false"></textarea></div>
+    <div class="pane"><div id="preview" class="preview"></div></div>
+  </main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script type="module">
+  import { getStroke } from 'https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/+esm';
+  window.__getStroke = getStroke;
+  window.dispatchEvent(new Event('freehand-ready'));
+</script>
+<script>
+(() => {
+  const INK_RE = /```ink\n([\s\S]*?)\n```/g;
+  const DEFAULT_SKETCH = { strokes: [], width: 800, height: 300 };
+
+  const $src = document.getElementById('src');
+  const $preview = document.getElementById('preview');
+  const $insert = document.getElementById('insert');
+  const $save = document.getElementById('save');
+  const $load = document.getElementById('load');
+  const $file = document.getElementById('file');
+  const $theme = document.getElementById('theme');
+
+  // --- Theme ---------------------------------------------------------------
+  const SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const MOON = '<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    $theme.innerHTML = t === 'dark' ? SUN : MOON;
+    $theme.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  }
+  const saved = localStorage.getItem('inkmark-theme');
+  applyTheme(saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  $theme.onclick = () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('inkmark-theme', next);
+    applyTheme(next);
+  };
+
+  // --- Marked extension for ink blocks ------------------------------------
+  function escapeAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  marked.use({
+    extensions: [{
+      name: 'ink',
+      level: 'block',
+      start(src) { const i = src.indexOf('```ink'); return i < 0 ? undefined : i; },
+      tokenizer(src) {
+        const m = /^```ink\n([\s\S]*?)\n```(?:\n|$)/.exec(src);
+        if (m) return { type: 'ink', raw: m[0], data: m[1] };
+      },
+      renderer(token) {
+        return `<div class="ink-sketch" data-ink="${escapeAttr(token.data)}"></div>`;
+      }
+    }]
+  });
+
+  // --- Stroke rendering ----------------------------------------------------
+  function strokeToPath(points, size) {
+    const getStroke = window.__getStroke;
+    if (!getStroke || !points.length) return '';
+    const outline = getStroke(points, {
+      size, thinning: 0.6, smoothing: 0.5, streamline: 0.5, simulatePressure: true
+    });
+    if (!outline.length) return '';
+    const r = n => Math.round(n * 100) / 100;
+    const d = [`M${r(outline[0][0])},${r(outline[0][1])}`, 'Q'];
+    for (let i = 0; i < outline.length; i++) {
+      const [x0, y0] = outline[i];
+      const [x1, y1] = outline[(i + 1) % outline.length];
+      d.push(`${r(x0)},${r(y0)} ${r((x0 + x1) / 2)},${r((y0 + y1) / 2)}`);
+    }
+    d.push('Z');
+    return d.join(' ');
+  }
+
+  // --- Sketch hydration ----------------------------------------------------
+  function parseSketch(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return { ...DEFAULT_SKETCH, strokes: [] };
+    const obj = JSON.parse(trimmed);
+    return {
+      strokes: Array.isArray(obj.strokes) ? obj.strokes : [],
+      width: Number(obj.width) || 800,
+      height: Number(obj.height) || 300
+    };
+  }
+
+  function serializeSketch(s) {
+    const strokes = s.strokes.map(st => ({
+      points: st.points.map(p => [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100, Math.round(p[2] * 1000) / 1000]),
+      size: st.size
+    }));
+    return JSON.stringify({ strokes, width: s.width, height: s.height });
+  }
+
+  function writeBack(index, sketch) {
+    const serialized = serializeSketch(sketch);
+    let i = 0;
+    const next = $src.value.replace(INK_RE, (whole, body) => {
+      if (i++ === index) return '```ink\n' + serialized + '\n```';
+      return whole;
+    });
+    if (next !== $src.value) {
+      const scroll = $preview.parentElement.scrollTop;
+      $src.value = next;
+      render();
+      $preview.parentElement.scrollTop = scroll;
+    }
+  }
+
+  function hydrateSketch(el, index) {
+    const raw = el.dataset.ink;
+    let sketch;
+    try { sketch = parseSketch(raw); }
+    catch (e) {
+      el.classList.add('ink-error');
+      el.classList.remove('ink-sketch');
+      el.innerHTML = `<strong>Ink block — invalid JSON</strong>${escapeAttr(raw.slice(0, 240))}${raw.length > 240 ? '…' : ''}`;
+      return;
+    }
+
+    el.innerHTML = '';
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = 'Ink';
+    el.appendChild(label);
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${sketch.width} ${sketch.height}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.classList.add('canvas');
+    el.appendChild(svg);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'ink-toolbar';
+    const group = document.createElement('div');
+    group.className = 'group';
+    const undoBtn = document.createElement('button');
+    undoBtn.textContent = 'Undo';
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear';
+    group.append(undoBtn, clearBtn);
+    const count = document.createElement('div');
+    count.className = 'count';
+    toolbar.append(group, count);
+    el.appendChild(toolbar);
+
+    const STROKE_SIZE = 4;
+
+    function redraw() {
+      svg.innerHTML = '';
+      for (const st of sketch.strokes) {
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', strokeToPath(st.points, st.size));
+        svg.appendChild(p);
+      }
+      count.textContent = `${sketch.strokes.length} stroke${sketch.strokes.length === 1 ? '' : 's'}`;
+    }
+
+    redraw();
+
+    undoBtn.onclick = () => {
+      if (!sketch.strokes.length) return;
+      sketch.strokes.pop();
+      writeBack(index, sketch);
+    };
+    clearBtn.onclick = () => {
+      if (!sketch.strokes.length) return;
+      sketch.strokes = [];
+      writeBack(index, sketch);
+    };
+
+    // --- drawing -----------------------------------------------------------
+    let active = null;
+    let livePath = null;
+
+    function toLocal(e) {
+      const rect = svg.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (sketch.width / rect.width);
+      const y = (e.clientY - rect.top) * (sketch.height / rect.height);
+      const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
+      return [x, y, pressure];
+    }
+
+    svg.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      svg.setPointerCapture(e.pointerId);
+      active = { points: [toLocal(e)], size: STROKE_SIZE };
+      livePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      svg.appendChild(livePath);
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!active) return;
+      e.preventDefault();
+      active.points.push(toLocal(e));
+      livePath.setAttribute('d', strokeToPath(active.points, active.size));
+    });
+    function finish(e, cancelled) {
+      if (!active) return;
+      try { svg.releasePointerCapture(e.pointerId); } catch {}
+      const stroke = active;
+      active = null;
+      livePath = null;
+      if (!cancelled && stroke.points.length > 1) {
+        sketch.strokes.push(stroke);
+        writeBack(index, sketch);
+      } else {
+        redraw();
+      }
+    }
+    svg.addEventListener('pointerup', e => finish(e, false));
+    svg.addEventListener('pointercancel', e => finish(e, true));
+    svg.addEventListener('pointerleave', e => { /* capture keeps the stream alive */ });
+  }
+
+  // --- Render --------------------------------------------------------------
+  function render() {
+    $preview.innerHTML = marked.parse($src.value);
+    const sketches = $preview.querySelectorAll('.ink-sketch');
+    sketches.forEach((el, i) => hydrateSketch(el, i));
+  }
+
+  let renderTimer = null;
+  $src.addEventListener('input', () => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(render, 120);
+  });
+
+  // --- Insert / Save / Load ------------------------------------------------
+  $insert.onclick = () => {
+    const empty = '```ink\n' + JSON.stringify(DEFAULT_SKETCH) + '\n```';
+    const start = $src.selectionStart;
+    const end = $src.selectionEnd;
+    const before = $src.value.slice(0, start);
+    const after = $src.value.slice(end);
+    const needsLeading = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+    const needsTrailing = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : '';
+    const insertion = needsLeading + empty + needsTrailing;
+    $src.value = before + insertion + after;
+    const caret = start + insertion.length;
+    $src.setSelectionRange(caret, caret);
+    $src.focus();
+    render();
+  };
+
+  $save.onclick = () => {
+    const blob = new Blob([$src.value], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'note.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  $load.onclick = () => $file.click();
+  $file.onchange = async () => {
+    const f = $file.files[0];
+    if (!f) return;
+    const text = await f.text();
+    $src.value = text;
+    $file.value = '';
+    render();
+  };
+
+  // --- Demo content --------------------------------------------------------
+  const DEMO = `# Inkmark
+
+A markdown editor where sketches live **inline in the source** as fenced \`ink\` blocks. Draw on the right — the JSON on the left updates as you go.
+
+## Try it
+
+Draw in the canvas below with a mouse, finger, or stylus. Then peek at the source: every stroke is just text.
+
+\`\`\`ink
+${JSON.stringify(DEFAULT_SKETCH)}
+\`\`\`
+
+## How it works
+
+> The markdown is the single source of truth. No sidecar files, no database — drawings persist because they are text.
+
+Save the file, reopen it later, drawings come back. Insert another sketch with the button up top.
+`;
+
+  $src.value = DEMO;
+
+  function bootstrap() { render(); }
+  if (window.__getStroke) bootstrap();
+  else window.addEventListener('freehand-ready', bootstrap, { once: true });
+})();
+</script>
+</body>
+</html>
