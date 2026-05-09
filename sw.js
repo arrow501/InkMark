@@ -1,4 +1,4 @@
-const CACHE = 'inkmark-v5';
+const CACHE = 'inkmark-v6';
 const SHELL = [
   './',
   './index.html',

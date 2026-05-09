@@ -54,6 +54,7 @@ const $ = (id) => document.getElementById(id);
 
 const writeEditor = $('write-editor');
 const sourceTa = $('source-textarea');
+const sourceHighlight = $('source-highlight');
 const lineGutter = $('line-gutter');
 const docContent = $('doc-content');
 const overlay = $('ink-overlay');
@@ -124,6 +125,106 @@ function renderBlockHTML(src) {
   if (!src.trim()) return '<div class="block-empty"></div>';
   const html = marked.parse(src);
   return sanitize(html);
+}
+
+/* =====================================================================
+ * Markdown syntax highlighter for Source mode (color-only so the
+ * highlighted overlay aligns character-for-character with the textarea)
+ * ===================================================================*/
+
+function escHtml(s) {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+function highlightInline(text) {
+  return text
+    .replace(/(\\[\\`*_{}\[\]()#+\-.!>])/g, '<span class="md-mark">$1</span>')
+    .replace(/(`+)([^`\n]+?)\1/g, (m, tick, code) =>
+      `<span class="md-mark">${tick}</span><span class="md-code">${code}</span><span class="md-mark">${tick}</span>`
+    )
+    .replace(/(\*\*|__)(?=\S)([\s\S]+?\S)\1/g, (m, mk, t) =>
+      `<span class="md-mark">${mk}</span><span class="md-bold">${t}</span><span class="md-mark">${mk}</span>`
+    )
+    .replace(/(\*|_)(?=\S)([^\*_\n]+?\S)\1/g, (m, mk, t) =>
+      `<span class="md-mark">${mk}</span><span class="md-em">${t}</span><span class="md-mark">${mk}</span>`
+    )
+    .replace(/(!?\[)([^\]]*)(\])(\()([^)]+)(\))/g, (m, lb, txt, rb, op, url, cp) =>
+      `<span class="md-mark">${lb}</span><span class="md-link-text">${txt}</span><span class="md-mark">${rb}${op}</span><span class="md-link-url">${url}</span><span class="md-mark">${cp}</span>`
+    );
+}
+
+function highlightLine(line, inFence) {
+  if (inFence) {
+    return `<span class="md-code-line">${line}</span>`;
+  }
+  // Fenced code start/end
+  let m = line.match(/^(\s*)(```+)(.*)$/);
+  if (m) {
+    const lang = m[3] ? `<span class="md-fence-info">${m[3]}</span>` : '';
+    return `${m[1]}<span class="md-fence">${m[2]}</span>${lang}`;
+  }
+  // ATX heading
+  m = line.match(/^(\s*)(#{1,6})(\s+)(.*?)(\s*#*\s*)$/);
+  if (m) {
+    const inner = m[4] ? highlightInline(m[4]) : '';
+    return `<span class="md-heading">${m[1]}<span class="md-mark">${m[2]}</span>${m[3]}${inner}${m[5]}</span>`;
+  }
+  // Horizontal rule
+  if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+    return `<span class="md-hr">${line}</span>`;
+  }
+  // Blockquote
+  m = line.match(/^(\s*)(&gt;)(\s+)(.*)$/);
+  if (m) {
+    return `${m[1]}<span class="md-quote-mark">${m[2]}</span>${m[3]}<span class="md-quote">${highlightInline(m[4])}</span>`;
+  }
+  // Unordered list
+  m = line.match(/^(\s*)([-*+])(\s+)(\[[ xX]\]\s+)?(.*)$/);
+  if (m) {
+    const task = m[4]
+      ? `<span class="md-mark">${m[4].slice(0, 3)}</span>${m[4].slice(3)}`
+      : '';
+    return `${m[1]}<span class="md-list-mark">${m[2]}</span>${m[3]}${task}${highlightInline(m[5])}`;
+  }
+  // Ordered list
+  m = line.match(/^(\s*)(\d+\.)(\s+)(.*)$/);
+  if (m) {
+    return `${m[1]}<span class="md-list-mark">${m[2]}</span>${m[3]}${highlightInline(m[4])}`;
+  }
+  // Table separator row
+  if (/^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(line)) {
+    return `<span class="md-mark">${line}</span>`;
+  }
+  // HTML-ish line
+  if (/^\s*<\/?[a-zA-Z]/.test(line)) {
+    return `<span class="md-html">${line}</span>`;
+  }
+  return highlightInline(line);
+}
+
+function highlightMarkdown(src) {
+  const escaped = escHtml(src);
+  const lines = escaped.split('\n');
+  let inFence = false;
+  const out = lines.map((line) => {
+    const fenceStart = !inFence && /^\s*```/.test(line);
+    const fenceEnd = inFence && /^\s*```/.test(line);
+    if (fenceStart || fenceEnd) {
+      const html = highlightLine(line, false);
+      inFence = fenceStart ? true : false;
+      return html;
+    }
+    return highlightLine(line, inFence);
+  });
+  // trailing newline keeps last line height equal to textarea
+  return out.join('\n') + '\n';
+}
+
+function updateSourceHighlight() {
+  if (!sourceHighlight) return;
+  sourceHighlight.innerHTML = highlightMarkdown(sourceTa.value);
 }
 
 /* =====================================================================
@@ -611,6 +712,7 @@ async function setMode(mode) {
     overlay.innerHTML = '';
     sourceTa.value = getSource();
     updateLineGutter();
+    updateSourceHighlight();
     setTimeout(() => sourceTa.focus(), 0);
     updateOrphanTray();
   } else {
@@ -881,6 +983,7 @@ async function applyLoadedSource(text, label) {
   } else if (state.mode === 'source') {
     sourceTa.value = getSource();
     updateLineGutter();
+    updateSourceHighlight();
   } else {
     docContent.innerHTML = renderMarkdown(state.body);
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -984,21 +1087,28 @@ function bindInstallPrompt() {
       state.installPrompt.prompt();
       const { outcome } = await state.installPrompt.userChoice;
       state.installPrompt = null;
-      if (outcome !== 'accepted') {
-        showToast('Install dismissed');
-      }
-    } else {
-      const ua = navigator.userAgent;
-      let msg = 'Use your browser menu: Install app, or Add to Home Screen.';
-      if (/iPhone|iPad|iPod/.test(ua)) {
-        msg = 'On iOS: tap Share, then "Add to Home Screen".';
-      } else if (/Firefox/.test(ua)) {
-        msg = 'Firefox does not support installing this site. Try Chrome, Edge, or Safari.';
-      } else if (/Safari/.test(ua) && !/Chrome/.test(ua)) {
-        msg = 'On Safari: File → Add to Dock (macOS 14+) or share to Home Screen.';
-      }
-      showToast(msg);
+      if (outcome !== 'accepted') showToast('Install dismissed');
+      return;
     }
+    const ua = navigator.userAgent;
+    const isMobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua);
+    const isFirefox = /Firefox/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+    const isSafariDesktop = /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/i.test(ua) && !isMobile;
+
+    let msg;
+    if (isFirefox && isMobile) {
+      msg = 'Firefox: tap the ⋮ menu → Install. (You can also long-press the address bar.)';
+    } else if (isFirefox) {
+      msg = 'Firefox desktop needs the "Progressive Web Apps for Firefox" add-on to install. Then re-open this page from there.';
+    } else if (isIOS) {
+      msg = 'iOS: tap Share, then "Add to Home Screen".';
+    } else if (isSafariDesktop) {
+      msg = 'Safari: File menu → Add to Dock (macOS 14+).';
+    } else {
+      msg = 'Use your browser menu: Install app, or Add to Home Screen.';
+    }
+    showToast(msg);
   });
 
   window.addEventListener('appinstalled', () => {
@@ -1063,10 +1173,12 @@ function init() {
     setBodyFromString(sourceTa.value);
     markDirty();
     updateLineGutter();
+    updateSourceHighlight();
     updateTOC();
   });
   sourceTa.addEventListener('scroll', () => {
     lineGutter.scrollTop = sourceTa.scrollTop;
+    if (sourceHighlight) sourceHighlight.scrollTop = sourceTa.scrollTop;
   });
 
   // Write editor: click below blocks → focus end
