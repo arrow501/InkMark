@@ -1,7 +1,7 @@
-const CACHE = 'inkmark-v3';
+const CACHE = 'inkmark-v4';
 const SHELL = [
   './',
-  './inkmark.html',
+  './index.html',
   './inkmark.css',
   './inkmark.js',
   './manifest.webmanifest',
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (e) => {
           }
           return resp;
         })
-        .catch(() => caches.match('./inkmark.html'));
+        .catch(() => caches.match('./index.html'));
     })
   );
 });

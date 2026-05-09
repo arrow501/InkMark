@@ -2,7 +2,7 @@
   "name": "InkMark",
   "short_name": "InkMark",
   "description": "A markdown editor you can ink directly over.",
-  "start_url": "./inkmark.html",
+  "start_url": "./",
   "scope": "./",
   "id": "/inkmark/",
   "display": "standalone",
@@ -27,7 +27,7 @@
   ],
   "file_handlers": [
     {
-      "action": "./inkmark.html",
+      "action": "./",
       "accept": {
         "text/markdown": [".md", ".markdown", ".mdown", ".mkd"],
         "text/plain": [".txt"]
@@ -42,7 +42,7 @@
     {
       "name": "New document",
       "short_name": "New",
-      "url": "./inkmark.html?new=1",
+      "url": "./?new=1",
       "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml" }]
     }
   ]
