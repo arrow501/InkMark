@@ -1,0 +1,14 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="InkMark">
+  <rect width="256" height="256" rx="48" fill="#faf9f5"/>
+  <g transform="translate(40 36)">
+    <rect x="0" y="0" width="148" height="184" rx="10" fill="#faf9f5" stroke="#141413" stroke-width="10"/>
+    <line x1="22" y1="148" x2="126" y2="148" stroke="#141413" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+    <line x1="22" y1="166" x2="96" y2="166" stroke="#141413" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+    <path d="M14 92 Q44 50 78 86 T146 96"
+          fill="none"
+          stroke="#cc785c"
+          stroke-width="14"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+</svg>
