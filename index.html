@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>InkMark</title>
+<meta name="description" content="A markdown editor you can ink directly over.">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#181715" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./inkmark.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.11/purify.min.js"></script>
+<script type="module">
+  import { getStroke } from 'https://esm.sh/perfect-freehand@1.2.2';
+  window.getStroke = getStroke;
+  window.dispatchEvent(new Event('inkmark:ready'));
+</script>
+</head>
+<body data-mode="write">
+
+<button id="sidebar-toggle-btn" type="button" aria-label="Show sidebar" title="Show sidebar (⌘\)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+</button>
+<div id="sidebar-scrim"></div>
+
+<aside id="sidebar" aria-label="Document outline">
+  <div class="sidebar-header">
+    <a href="#" class="brand" id="brand-home" aria-label="InkMark home">
+      <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true">
+        <rect width="256" height="256" rx="48" fill="var(--surface-card)"/>
+        <g transform="translate(40 36)">
+          <rect x="0" y="0" width="148" height="184" rx="10" fill="var(--canvas)" stroke="currentColor" stroke-width="10"/>
+          <line x1="22" y1="148" x2="126" y2="148" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+          <line x1="22" y1="166" x2="96" y2="166" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+          <path d="M14 92 Q44 50 78 86 T146 96" fill="none" stroke="#cc785c" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <span class="brand-name">Ink<span class="accent">Mark</span></span>
+    </a>
+    <button class="icon-btn" id="sidebar-hide-btn" type="button" aria-label="Hide sidebar" title="Hide sidebar (⌘\)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">Outline</div>
+    <nav id="toc" aria-label="Table of contents"></nav>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="side-btn" id="btn-new" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      <span>New document</span>
+    </button>
+    <button class="side-btn" id="btn-install" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span id="btn-install-label">Install app</span>
+    </button>
+  </div>
+</aside>
+
+<main>
+  <div class="doc">
+    <div class="write-editor" id="write-editor"></div>
+    <div class="source-pane">
+      <div class="line-gutter" id="line-gutter"></div>
+      <pre class="source-highlight" id="source-highlight" aria-hidden="true"></pre>
+      <textarea id="source-textarea" spellcheck="false"></textarea>
+    </div>
+    <div id="doc-content"></div>
+    <svg id="ink-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</main>
+
+<div id="toolbar" role="toolbar" aria-label="InkMark toolbar">
+  <div class="tb-group">
+    <button class="tb-btn active mode-btn" id="btn-write" type="button" title="Write mode (⌘E)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      <span class="label">Write</span>
+    </button>
+    <button class="tb-btn mode-btn" id="btn-source" type="button" title="Source mode (⌘E)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span class="label">Source</span>
+    </button>
+    <button class="tb-btn mode-btn" id="btn-ink" type="button" title="Ink mode (⌘E)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><line x1="2" y1="2" x2="7.586" y2="7.586"/><circle cx="11" cy="11" r="2"/></svg>
+      <span class="label">Ink</span>
+    </button>
+  </div>
+
+  <div class="tb-divider"></div>
+
+  <div class="tb-group" id="ink-tools" hidden>
+    <span class="tb-counter" id="ink-counter">0 strokes</span>
+    <button class="tb-btn icon-only" id="btn-undo" type="button" title="Undo last stroke (⌘Z)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+    </button>
+  </div>
+
+  <div class="tb-group" id="write-tools">
+    <button class="tb-btn icon-only" id="btn-insert-section" type="button" title="Insert section">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <div class="tb-divider"></div>
+
+  <div class="tb-group">
+    <button class="tb-btn icon-only" id="btn-theme" type="button" title="Toggle theme">
+      <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+    </button>
+    <button class="tb-btn" id="btn-save" type="button" title="Save .md file (⌘S)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      <span class="label">Save</span>
+      <span class="kbd">⌘S</span>
+      <span class="dot hidden" id="save-dot"></span>
+    </button>
+    <button class="tb-btn" id="btn-load" type="button" title="Open .md file (⌘O)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span class="label">Open</span>
+      <span class="kbd">⌘O</span>
+    </button>
+  </div>
+</div>
+
+<div id="orphan-tray" role="status"></div>
+<div id="toast" role="alert"></div>
+
+<div id="modal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3 id="modal-title">Confirm</h3>
+    <p id="modal-message"></p>
+    <div class="modal-actions">
+      <button class="modal-btn" id="modal-cancel" type="button">Cancel</button>
+      <button class="modal-btn primary" id="modal-confirm" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain">
+
+<script src="./inkmark.js"></script>
+</body>
+</html>
