@@ -10,7 +10,7 @@ Markdown notes you can ink directly over. Headings anchor your strokes — when 
 
 ## How it works
 
-Switch to **Ink** mode in the toolbar. Draw on the page. Switch back to **Write** mode to edit.
+Switch to **Ink** mode in the toolbar. Draw on the page. Switch back to **Write** mode to edit. Click any block to edit its source — the rest of the page stays rendered.
 
 The **Source** mode shows your markdown the way an editor would: monospace, line numbers, every \`#\` and \`*\` visible.
 
@@ -37,11 +37,22 @@ function hello() {
 \`\`\`
 `;
 
+const BLANK_DOC = `# Untitled
+
+Start writing.
+
+\`\`\`ink
+{"v":1,"strokes":[]}
+\`\`\`
+`;
+
 const STORAGE_KEY = 'inkmark.autosave.v1';
 const STORAGE_THEME = 'inkmark.theme';
+const STORAGE_SIDEBAR = 'inkmark.sidebar.hidden';
 
 const $ = (id) => document.getElementById(id);
-const ta = $('textarea');
+
+const writeEditor = $('write-editor');
 const sourceTa = $('source-textarea');
 const lineGutter = $('line-gutter');
 const docContent = $('doc-content');
@@ -53,6 +64,9 @@ const state = {
   theme:
     localStorage.getItem(STORAGE_THEME) ||
     (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  body: '',           // canonical markdown body (no ink fence)
+  blocks: [],         // for write mode editing — derived from body
+  activeIdx: null,    // index of active (source) block in write mode
   strokes: [],
   orphans: [],
   dirty: false,
@@ -61,7 +75,7 @@ const state = {
 };
 
 /* =====================================================================
- * Markdown setup (marked + DOMPurify, GFM enabled)
+ * Markdown setup
  * ===================================================================*/
 
 if (window.marked) {
@@ -83,9 +97,7 @@ function hash(s) {
 }
 function slugify(s) {
   return (
-    s
-      .toLowerCase()
-      .trim()
+    s.toLowerCase().trim()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || 'h'
   );
@@ -108,6 +120,12 @@ function renderMarkdown(body) {
   return tmp.innerHTML;
 }
 
+function renderBlockHTML(src) {
+  if (!src.trim()) return '<div class="block-empty"></div>';
+  const html = marked.parse(src);
+  return sanitize(html);
+}
+
 /* =====================================================================
  * Source ↔ ink JSON
  * ===================================================================*/
@@ -128,7 +146,7 @@ function parseSource(src) {
       showToast('Ink block JSON is malformed — strokes hidden until fixed');
     }
   }
-  return { body, ink };
+  return { body: body.replace(/\s+$/, '') + '\n', ink };
 }
 
 function buildSource(body, strokes) {
@@ -137,21 +155,179 @@ function buildSource(body, strokes) {
   return `${trimmed}\n\n\`\`\`ink\n${json}\n\`\`\`\n`;
 }
 
-function syncInkToSource() {
-  const src = getSource();
-  const { body } = parseSource(src);
-  setSource(buildSource(body, [...state.strokes, ...state.orphans]), { silent: true });
+function getSource() {
+  return buildSource(state.body, [...state.strokes, ...state.orphans]);
 }
 
-function getSource() {
-  return state.mode === 'source' ? sourceTa.value : ta.value;
+function setBodyFromString(text) {
+  const { body, ink } = parseSource(text);
+  state.body = body;
+  state.strokes = (ink.strokes || []).filter((s) => s && s.anchor && Array.isArray(s.points));
+  state.orphans = [];
+  state.blocks = splitIntoBlocks(state.body);
+  state.activeIdx = null;
 }
-function setSource(text, { silent = false } = {}) {
-  ta.value = text;
-  sourceTa.value = text;
-  if (!silent) markDirty();
-  updateLineGutter();
+
+/* =====================================================================
+ * Block model (Write mode)
+ * ===================================================================*/
+
+function splitIntoBlocks(src) {
+  const lines = (src || '').split('\n');
+  const blocks = [];
+  let buf = [];
+  let inFence = false;
+  const flush = () => {
+    if (buf.length) {
+      blocks.push(buf.join('\n'));
+      buf = [];
+    }
+  };
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      buf.push(line);
+      continue;
+    }
+    if (!inFence && line.trim() === '') {
+      flush();
+    } else {
+      buf.push(line);
+    }
+  }
+  flush();
+  return blocks.length ? blocks : [''];
+}
+
+function bodyFromBlocks() {
+  return state.blocks.join('\n\n').replace(/\s*$/, '') + '\n';
+}
+
+function blockKind(src) {
+  const first = (src || '').split('\n')[0] || '';
+  const m = first.match(/^(#{1,4})\s+/);
+  if (m) return 'h' + m[1].length;
+  return '';
+}
+
+function renderWriteEditor() {
+  writeEditor.innerHTML = '';
+  state.blocks.forEach((src, i) => {
+    const div = document.createElement('div');
+    div.className = 'block';
+    div.dataset.idx = String(i);
+    if (i === state.activeIdx) {
+      div.classList.add('active');
+      const ta = document.createElement('textarea');
+      ta.className = 'block-source';
+      ta.value = src;
+      ta.spellcheck = true;
+      ta.dataset.kind = blockKind(src);
+      ta.addEventListener('input', () => onBlockInput(i, ta));
+      ta.addEventListener('keydown', (e) => onBlockKey(e, i, ta));
+      ta.addEventListener('blur', () => commitActiveBlock());
+      div.appendChild(ta);
+    } else {
+      div.innerHTML = renderBlockHTML(src);
+      div.addEventListener('mousedown', (e) => {
+        if (e.target.closest('a, button, input, textarea')) return;
+        e.preventDefault();
+        activateBlock(i);
+      });
+    }
+    writeEditor.appendChild(div);
+  });
+}
+
+function activateBlock(idx) {
+  if (state.activeIdx === idx) return;
+  if (state.activeIdx != null) commitActiveBlock(false);
+  state.activeIdx = idx;
+  renderWriteEditor();
+  requestAnimationFrame(() => {
+    const ta = writeEditor.querySelector(`[data-idx="${idx}"] textarea`);
+    if (ta) {
+      ta.focus();
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+      autoSize(ta);
+    }
+  });
+}
+
+function commitActiveBlock(rerender = true) {
+  if (state.activeIdx == null) return;
+  const ta = writeEditor.querySelector(`[data-idx="${state.activeIdx}"] textarea`);
+  if (!ta) {
+    state.activeIdx = null;
+    return;
+  }
+  const text = ta.value;
+  const newBlocks = splitIntoBlocks(text);
+  state.blocks.splice(state.activeIdx, 1, ...newBlocks);
+  if (state.blocks.length === 0) state.blocks = [''];
+  state.activeIdx = null;
+  state.body = bodyFromBlocks();
+  if (rerender) renderWriteEditor();
+}
+
+function onBlockInput(idx, ta) {
+  state.blocks[idx] = ta.value;
+  state.body = bodyFromBlocks();
+  ta.dataset.kind = blockKind(ta.value);
+  autoSize(ta);
+  markDirty();
   updateTOC();
+}
+
+function onBlockKey(e, idx, ta) {
+  // Backspace at start of block: merge with previous
+  if (
+    e.key === 'Backspace' &&
+    ta.selectionStart === 0 &&
+    ta.selectionEnd === 0 &&
+    idx > 0
+  ) {
+    e.preventDefault();
+    const prev = state.blocks[idx - 1];
+    const cur = state.blocks[idx];
+    const merged = prev + (cur ? '\n' + cur : '');
+    state.blocks[idx - 1] = merged;
+    state.blocks.splice(idx, 1);
+    state.activeIdx = idx - 1;
+    state.body = bodyFromBlocks();
+    renderWriteEditor();
+    requestAnimationFrame(() => {
+      const newTa = writeEditor.querySelector(`[data-idx="${idx - 1}"] textarea`);
+      if (newTa) {
+        newTa.focus();
+        newTa.setSelectionRange(prev.length, prev.length);
+        autoSize(newTa);
+      }
+    });
+    markDirty();
+    updateTOC();
+    return;
+  }
+  // Tab: insert two spaces (no focus jump)
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    ta.value = ta.value.slice(0, start) + '  ' + ta.value.slice(end);
+    ta.setSelectionRange(start + 2, start + 2);
+    onBlockInput(idx, ta);
+  }
+}
+
+function autoSize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+function focusEditorEnd() {
+  if (!state.blocks.length) state.blocks = [''];
+  activateBlock(state.blocks.length - 1);
 }
 
 /* =====================================================================
@@ -160,16 +336,11 @@ function setSource(text, { silent = false } = {}) {
 
 function rdp(points, eps) {
   if (points.length < 3) return points.slice();
-  let maxD = 0,
-    idx = 0;
-  const a = points[0],
-    b = points[points.length - 1];
+  let maxD = 0, idx = 0;
+  const a = points[0], b = points[points.length - 1];
   for (let i = 1; i < points.length - 1; i++) {
     const d = perpDist(points[i], a, b);
-    if (d > maxD) {
-      maxD = d;
-      idx = i;
-    }
+    if (d > maxD) { maxD = d; idx = i; }
   }
   if (maxD > eps) {
     const left = rdp(points.slice(0, idx + 1), eps);
@@ -179,13 +350,11 @@ function rdp(points, eps) {
   return [a, b];
 }
 function perpDist(p, a, b) {
-  const dx = b.x - a.x,
-    dy = b.y - a.y;
+  const dx = b.x - a.x, dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
   if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
   const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
-  const px = a.x + t * dx,
-    py = a.y + t * dy;
+  const px = a.x + t * dx, py = a.y + t * dy;
   return Math.hypot(p.x - px, p.y - py);
 }
 
@@ -239,8 +408,7 @@ function finalizeStroke(rawPoints, pointerType) {
   const points = simple.map((p, i) => {
     const x = p.x / colWidth;
     const y = p.y - anchor.headingTop;
-    let vx = 0,
-      vy = 0;
+    let vx = 0, vy = 0;
     if (i < simple.length - 1) {
       const n = simple[i + 1];
       vx = (n.x - p.x) / colWidth;
@@ -308,27 +476,18 @@ function renderStrokes() {
         s.anchor.id = fuzzy.id;
       }
     }
-    if (!hEl) {
-      newOrphans.push(s);
-      continue;
-    }
+    if (!hEl) { newOrphans.push(s); continue; }
     stillAnchored.push(s);
 
     const hTop = hEl.getBoundingClientRect().top - docTop;
     const abs = s.points.map(([x, y, , , p]) => ({
-      x: x * w,
-      y: hTop + y,
-      pressure: p,
+      x: x * w, y: hTop + y, pressure: p,
     }));
 
     const stroke = window.getStroke
       ? window.getStroke(abs, {
-          size: 3.2,
-          thinning: 0.5,
-          smoothing: 0.6,
-          streamline: 0.5,
-          simulatePressure: !s.pen,
-          last: true,
+          size: 3.2, thinning: 0.5, smoothing: 0.6, streamline: 0.5,
+          simulatePressure: !s.pen, last: true,
         })
       : null;
 
@@ -390,10 +549,7 @@ function moveStroke(e) {
 function drawLive() {
   if (!livePath || !window.getStroke) return;
   const stroke = window.getStroke(liveRaw, {
-    size: 3.2,
-    thinning: 0.5,
-    smoothing: 0.6,
-    streamline: 0.5,
+    size: 3.2, thinning: 0.5, smoothing: 0.6, streamline: 0.5,
     simulatePressure: state.drawing?.pointerType !== 'pen',
   });
   livePath.setAttribute('d', strokeToPath(stroke));
@@ -408,14 +564,10 @@ function endStroke(e) {
   state.drawing = null;
   liveRaw = [];
   recordedRaw = [];
-  if (livePath) {
-    livePath.remove();
-    livePath = null;
-  }
+  if (livePath) { livePath.remove(); livePath = null; }
   if (stroke) {
     state.strokes.push(stroke);
     markDirty();
-    syncInkToSource();
   }
   renderStrokes();
 }
@@ -424,7 +576,6 @@ function undo() {
   if (!state.strokes.length) return;
   state.strokes.pop();
   markDirty();
-  syncInkToSource();
   renderStrokes();
 }
 
@@ -434,9 +585,13 @@ function undo() {
 
 async function setMode(mode) {
   if (mode === state.mode) return;
-  // mirror text between editors before switching
-  if (state.mode === 'source') ta.value = sourceTa.value;
-  else sourceTa.value = ta.value;
+
+  // exit current mode
+  if (state.mode === 'write') {
+    commitActiveBlock(false);
+  } else if (state.mode === 'source') {
+    setBodyFromString(sourceTa.value);
+  }
 
   state.mode = mode;
   document.body.dataset.mode = mode;
@@ -448,18 +603,18 @@ async function setMode(mode) {
 
   if (mode === 'write') {
     overlay.innerHTML = '';
+    state.blocks = splitIntoBlocks(state.body);
+    state.activeIdx = null;
+    renderWriteEditor();
     updateOrphanTray();
-    setTimeout(() => ta.focus(), 0);
   } else if (mode === 'source') {
     overlay.innerHTML = '';
-    updateOrphanTray();
+    sourceTa.value = getSource();
     updateLineGutter();
     setTimeout(() => sourceTa.focus(), 0);
+    updateOrphanTray();
   } else {
-    const { body, ink } = parseSource(getSource());
-    state.strokes = (ink.strokes || []).filter((s) => s.anchor && Array.isArray(s.points));
-    state.orphans = [];
-    docContent.innerHTML = renderMarkdown(body);
+    docContent.innerHTML = renderMarkdown(state.body);
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(r));
     renderStrokes();
@@ -473,7 +628,7 @@ function toggleHidden(el, hidden) {
 }
 
 /* =====================================================================
- * Theme
+ * Theme & sidebar
  * ===================================================================*/
 
 const SUN_PATH =
@@ -487,6 +642,31 @@ function setTheme(t) {
   $('theme-icon').innerHTML = t === 'dark' ? SUN_PATH : MOON_PATH;
   $('btn-theme').setAttribute('title', t === 'dark' ? 'Switch to light' : 'Switch to dark');
   if (state.mode === 'ink') renderStrokes();
+}
+
+function setSidebarHidden(hidden, persist = true) {
+  document.body.classList.toggle('sidebar-hidden', hidden);
+  if (hidden) document.body.classList.remove('sidebar-open');
+  if (persist) {
+    try { localStorage.setItem(STORAGE_SIDEBAR, hidden ? '1' : '0'); } catch (e) {}
+  }
+}
+
+function toggleSidebar() {
+  const isMobile = matchMedia('(max-width: 900px)').matches;
+  if (isMobile) {
+    document.body.classList.toggle('sidebar-open');
+  } else {
+    setSidebarHidden(!document.body.classList.contains('sidebar-hidden'));
+  }
+}
+
+function openSidebar() {
+  document.body.classList.add('sidebar-open');
+  setSidebarHidden(false);
+}
+function closeSidebar() {
+  document.body.classList.remove('sidebar-open');
 }
 
 /* =====================================================================
@@ -507,7 +687,6 @@ function updateOrphanTray() {
     $('orphan-clear').onclick = () => {
       state.orphans = [];
       markDirty();
-      syncInkToSource();
       renderStrokes();
     };
   } else {
@@ -516,7 +695,6 @@ function updateOrphanTray() {
 }
 
 function updateLineGutter() {
-  if (state.mode !== 'source') return;
   const lines = (sourceTa.value.match(/\n/g) || []).length + 1;
   let s = '';
   for (let i = 1; i <= lines; i++) s += i + '\n';
@@ -524,16 +702,11 @@ function updateLineGutter() {
 }
 
 function updateTOC() {
-  const src = getSource();
-  const { body } = parseSource(src);
-  const lines = body.split('\n');
+  const lines = (state.body || '').split('\n');
   const items = [];
   let inFence = false;
   lines.forEach((line, i) => {
-    if (/^```/.test(line)) {
-      inFence = !inFence;
-      return;
-    }
+    if (/^\s*```/.test(line)) { inFence = !inFence; return; }
     if (inFence) return;
     const m = line.match(/^(#{1,2})\s+(.+?)\s*#*\s*$/);
     if (m) items.push({ level: m[1].length, text: m[2], line: i });
@@ -559,9 +732,7 @@ function updateTOC() {
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
-function escapeAttr(s) {
-  return s.replace(/"/g, '&quot;');
-}
+function escapeAttr(s) { return s.replace(/"/g, '&quot;'); }
 
 function jumpToHeading(lineIdx, text) {
   if (state.mode === 'ink') {
@@ -572,16 +743,28 @@ function jumpToHeading(lineIdx, text) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
-  const target = state.mode === 'source' ? sourceTa : ta;
-  const lines = target.value.split('\n');
+  if (state.mode === 'write') {
+    const idx = state.blocks.findIndex((b) => {
+      const first = (b || '').split('\n')[0];
+      const m = first.match(/^#{1,2}\s+(.+?)\s*#*\s*$/);
+      return m && m[1].trim() === text.trim();
+    });
+    if (idx >= 0) {
+      activateBlock(idx);
+      const block = writeEditor.querySelector(`[data-idx="${idx}"]`);
+      if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return;
+  }
+  // source mode
+  const lines = sourceTa.value.split('\n');
   let pos = 0;
   for (let i = 0; i < lineIdx && i < lines.length; i++) pos += lines[i].length + 1;
-  target.focus();
-  target.setSelectionRange(pos, pos + (lines[lineIdx] ? lines[lineIdx].length : 0));
-  // approximate scroll into view
-  const ratio = pos / Math.max(target.value.length, 1);
+  sourceTa.focus();
+  sourceTa.setSelectionRange(pos, pos + (lines[lineIdx] ? lines[lineIdx].length : 0));
+  const ratio = pos / Math.max(sourceTa.value.length, 1);
   window.scrollTo({
-    top: target.offsetTop + target.offsetHeight * ratio - 80,
+    top: sourceTa.offsetTop + sourceTa.offsetHeight * ratio - 80,
     behavior: 'smooth',
   });
 }
@@ -595,9 +778,7 @@ function showToast(msg) {
   t.textContent = msg;
   t.style.display = 'block';
   clearTimeout(showToast._tid);
-  showToast._tid = setTimeout(() => {
-    t.style.display = 'none';
-  }, 3500);
+  showToast._tid = setTimeout(() => { t.style.display = 'none'; }, 3500);
 }
 
 function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = false }) {
@@ -645,36 +826,28 @@ let autosaveT;
 function scheduleAutosave() {
   clearTimeout(autosaveT);
   autosaveT = setTimeout(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, getSource());
-    } catch (e) {
-      /* quota */
-    }
+    try { localStorage.setItem(STORAGE_KEY, getSource()); } catch (e) {}
   }, 600);
 }
 function loadAutosave() {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     return v && v.trim() ? v : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 function clearAutosave() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (e) {}
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 }
 
 function suggestFilename() {
-  const { body } = parseSource(getSource());
-  const m = body.match(/^#\s+(.+)$/m);
+  const m = state.body.match(/^#\s+(.+)$/m);
   const title = m ? m[1].trim() : 'inkmark';
   return slugify(title).slice(0, 60) + '.md';
 }
 
 function saveFile() {
-  syncInkToSource();
+  if (state.mode === 'write') commitActiveBlock(false);
+  if (state.mode === 'source') setBodyFromString(sourceTa.value);
   const src = getSource();
   const blob = new Blob([src], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -699,26 +872,31 @@ async function maybeWarnBeforeReplacing() {
   });
 }
 
-async function reRenderForLoadedSource() {
-  if (state.mode === 'ink') {
-    state.mode = 'write';
-    await setMode('ink');
-  } else {
+async function applyLoadedSource(text, label) {
+  setBodyFromString(text);
+  markClean();
+  clearAutosave();
+  if (state.mode === 'write') {
+    renderWriteEditor();
+  } else if (state.mode === 'source') {
+    sourceTa.value = getSource();
     updateLineGutter();
-    updateTOC();
+  } else {
+    docContent.innerHTML = renderMarkdown(state.body);
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    await new Promise((r) => requestAnimationFrame(r));
+    renderStrokes();
   }
+  updateTOC();
+  if (label) showToast(label);
 }
 
 async function loadFile(file) {
   if (!(await maybeWarnBeforeReplacing())) return;
   const reader = new FileReader();
-  reader.onload = async () => {
+  reader.onload = () => {
     const text = String(reader.result || '').replace(/\r\n?/g, '\n');
-    setSource(text, { silent: true });
-    markClean();
-    clearAutosave();
-    await reRenderForLoadedSource();
-    showToast('Loaded ' + (file.name || 'file'));
+    applyLoadedSource(text, 'Loaded ' + (file.name || 'file'));
   };
   reader.onerror = () => showToast('Could not read file');
   reader.readAsText(file);
@@ -726,10 +904,10 @@ async function loadFile(file) {
 
 async function newDocument() {
   if (!(await maybeWarnBeforeReplacing())) return;
-  setSource(DEMO, { silent: true });
-  markClean();
-  clearAutosave();
-  await reRenderForLoadedSource();
+  await applyLoadedSource(BLANK_DOC, 'New document');
+  if (state.mode === 'write') {
+    requestAnimationFrame(() => activateBlock(0));
+  }
 }
 
 /* =====================================================================
@@ -737,37 +915,44 @@ async function newDocument() {
  * ===================================================================*/
 
 function insertSection() {
-  const target = state.mode === 'source' ? sourceTa : ta;
-  const pos = target.selectionStart;
-  const before = target.value.slice(0, pos);
-  const after = target.value.slice(pos);
-  const lead =
-    before.length === 0 || before.endsWith('\n\n')
-      ? ''
-      : before.endsWith('\n')
-        ? '\n'
-        : '\n\n';
-  const insert = `${lead}## New section\n\n`;
-  target.value = before + insert + after;
-  const caret = before.length + lead.length + 3;
-  target.setSelectionRange(caret, caret + 'New section'.length);
-  target.focus();
-  if (state.mode === 'source') ta.value = target.value;
-  else sourceTa.value = target.value;
+  if (state.mode === 'source') {
+    const pos = sourceTa.selectionStart;
+    const before = sourceTa.value.slice(0, pos);
+    const after = sourceTa.value.slice(pos);
+    const lead =
+      before.length === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+    const insert = `${lead}## New section\n\n`;
+    sourceTa.value = before + insert + after;
+    const caret = before.length + lead.length + 3;
+    sourceTa.setSelectionRange(caret, caret + 'New section'.length);
+    sourceTa.focus();
+    setBodyFromString(sourceTa.value);
+    markDirty();
+    updateLineGutter();
+    updateTOC();
+    return;
+  }
+  // write mode
+  let idx = state.activeIdx != null ? state.activeIdx + 1 : state.blocks.length;
+  if (state.activeIdx != null) commitActiveBlock(false);
+  state.blocks.splice(idx, 0, '## New section');
+  state.body = bodyFromBlocks();
+  state.activeIdx = idx;
+  renderWriteEditor();
+  requestAnimationFrame(() => {
+    const ta = writeEditor.querySelector(`[data-idx="${idx}"] textarea`);
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(3, 3 + 'New section'.length);
+      autoSize(ta);
+    }
+  });
   markDirty();
-  updateLineGutter();
   updateTOC();
 }
 
-function openSidebar() {
-  document.body.classList.add('sidebar-open');
-}
-function closeSidebar() {
-  document.body.classList.remove('sidebar-open');
-}
-
 /* =====================================================================
- * PWA: SW + install + file_handlers / launchQueue
+ * PWA: SW + install + file_handlers
  * ===================================================================*/
 
 function registerSW() {
@@ -776,19 +961,46 @@ function registerSW() {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+function isStandalone() {
+  return matchMedia('(display-mode: standalone)').matches
+    || matchMedia('(display-mode: window-controls-overlay)').matches
+    || window.navigator.standalone === true;
+}
+
 function bindInstallPrompt() {
+  if (isStandalone()) {
+    $('btn-install').hidden = true;
+    return;
+  }
+
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     state.installPrompt = e;
-    $('btn-install').hidden = false;
+    $('btn-install-label').textContent = 'Install app';
   });
+
   $('btn-install').addEventListener('click', async () => {
-    if (!state.installPrompt) return;
-    state.installPrompt.prompt();
-    await state.installPrompt.userChoice;
-    state.installPrompt = null;
-    $('btn-install').hidden = true;
+    if (state.installPrompt) {
+      state.installPrompt.prompt();
+      const { outcome } = await state.installPrompt.userChoice;
+      state.installPrompt = null;
+      if (outcome !== 'accepted') {
+        showToast('Install dismissed');
+      }
+    } else {
+      const ua = navigator.userAgent;
+      let msg = 'Use your browser menu: Install app, or Add to Home Screen.';
+      if (/iPhone|iPad|iPod/.test(ua)) {
+        msg = 'On iOS: tap Share, then "Add to Home Screen".';
+      } else if (/Firefox/.test(ua)) {
+        msg = 'Firefox does not support installing this site. Try Chrome, Edge, or Safari.';
+      } else if (/Safari/.test(ua) && !/Chrome/.test(ua)) {
+        msg = 'On Safari: File → Add to Dock (macOS 14+) or share to Home Screen.';
+      }
+      showToast(msg);
+    }
   });
+
   window.addEventListener('appinstalled', () => {
     $('btn-install').hidden = true;
     showToast('InkMark installed');
@@ -804,15 +1016,9 @@ async function handleLaunchQueue() {
       try {
         const file = await handle.getFile();
         const text = (await file.text()).replace(/\r\n?/g, '\n');
-        setSource(text, { silent: true });
-        markClean();
-        clearAutosave();
-        await reRenderForLoadedSource();
-        showToast('Opened ' + file.name);
+        await applyLoadedSource(text, 'Opened ' + file.name);
         break;
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) { /* ignore */ }
     }
   });
 }
@@ -825,27 +1031,36 @@ function init() {
   setTheme(state.theme);
   document.body.dataset.mode = 'write';
 
+  // restore sidebar pref
+  try {
+    const hidden = localStorage.getItem(STORAGE_SIDEBAR) === '1';
+    if (hidden && !matchMedia('(max-width: 900px)').matches) {
+      setSidebarHidden(true, false);
+    }
+  } catch (e) {}
+
+  // restore autosave or fall back to demo
   const url = new URL(location.href);
   const wantsNew = url.searchParams.get('new') === '1';
   const restored = !wantsNew && loadAutosave();
   if (restored) {
-    setSource(restored, { silent: true });
+    setBodyFromString(restored);
     showToast('Restored from autosave');
+  } else if (wantsNew) {
+    setBodyFromString(BLANK_DOC);
+    clearAutosave();
   } else {
-    setSource(DEMO, { silent: true });
+    setBodyFromString(DEMO);
     clearAutosave();
   }
   markClean();
-  updateTOC();
-  updateLineGutter();
 
-  ta.addEventListener('input', () => {
-    sourceTa.value = ta.value;
-    markDirty();
-    updateTOC();
-  });
+  renderWriteEditor();
+  updateTOC();
+
+  // Source mode listeners
   sourceTa.addEventListener('input', () => {
-    ta.value = sourceTa.value;
+    setBodyFromString(sourceTa.value);
     markDirty();
     updateLineGutter();
     updateTOC();
@@ -854,6 +1069,12 @@ function init() {
     lineGutter.scrollTop = sourceTa.scrollTop;
   });
 
+  // Write editor: click below blocks → focus end
+  writeEditor.addEventListener('click', (e) => {
+    if (e.target === writeEditor) focusEditorEnd();
+  });
+
+  // toolbar
   $('btn-write').onclick = () => setMode('write');
   $('btn-source').onclick = () => setMode('source');
   $('btn-ink').onclick = () => setMode('ink');
@@ -868,40 +1089,37 @@ function init() {
   $('btn-undo').onclick = undo;
   $('btn-insert-section').onclick = insertSection;
   $('btn-new').onclick = newDocument;
-  $('brand-home').onclick = (e) => {
-    e.preventDefault();
-    newDocument();
-  };
+  $('brand-home').onclick = (e) => { e.preventDefault(); newDocument(); };
 
-  $('mobile-menu-btn').onclick = openSidebar;
+  // sidebar
+  $('sidebar-toggle-btn').onclick = toggleSidebar;
+  $('sidebar-hide-btn').onclick = toggleSidebar;
   $('sidebar-scrim').onclick = closeSidebar;
 
+  // ink overlay
   overlay.addEventListener('pointerdown', startStroke);
   overlay.addEventListener('pointermove', moveStroke);
   overlay.addEventListener('pointerup', endStroke);
   overlay.addEventListener('pointercancel', endStroke);
   overlay.addEventListener('lostpointercapture', endStroke);
 
+  // shortcuts
   document.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
-    if (mod && k === 's') {
-      e.preventDefault();
-      saveFile();
-    } else if (mod && k === 'o') {
-      e.preventDefault();
-      $('file-input').click();
-    } else if (mod && k === 'e') {
+    if (mod && k === 's') { e.preventDefault(); saveFile(); }
+    else if (mod && k === 'o') { e.preventDefault(); $('file-input').click(); }
+    else if (mod && k === 'e') {
       e.preventDefault();
       const order = ['write', 'source', 'ink'];
       const next = order[(order.indexOf(state.mode) + 1) % order.length];
       setMode(next);
     } else if (mod && k === 'z' && state.mode === 'ink' && !e.shiftKey) {
-      e.preventDefault();
-      undo();
+      e.preventDefault(); undo();
     } else if (mod && e.shiftKey && k === 'n') {
-      e.preventDefault();
-      newDocument();
+      e.preventDefault(); newDocument();
+    } else if (mod && e.key === '\\') {
+      e.preventDefault(); toggleSidebar();
     } else if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
       closeSidebar();
     }
@@ -910,16 +1128,11 @@ function init() {
   let resizeT;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
-    resizeT = setTimeout(() => {
-      if (state.mode === 'ink') renderStrokes();
-    }, 100);
+    resizeT = setTimeout(() => { if (state.mode === 'ink') renderStrokes(); }, 100);
   });
 
   window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) {
-      e.preventDefault();
-      e.returnValue = '';
-    }
+    if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
   registerSW();

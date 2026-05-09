@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="./icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./inkmark.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.11/purify.min.js"></script>
@@ -24,26 +24,31 @@
 </head>
 <body data-mode="write">
 
-<button id="mobile-menu-btn" type="button" aria-label="Open sidebar" title="Menu">
+<button id="sidebar-toggle-btn" type="button" aria-label="Show sidebar" title="Show sidebar (⌘\)">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
 </button>
 <div id="sidebar-scrim"></div>
 
 <aside id="sidebar" aria-label="Document outline">
-  <a href="#" class="brand" id="brand-home" aria-label="InkMark home">
-    <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true">
-      <rect width="256" height="256" rx="48" fill="var(--surface-card)"/>
-      <g transform="translate(40 36)">
-        <rect x="0" y="0" width="148" height="184" rx="10" fill="var(--canvas)" stroke="currentColor" stroke-width="10"/>
-        <line x1="22" y1="148" x2="126" y2="148" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
-        <line x1="22" y1="166" x2="96" y2="166" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
-        <path d="M14 92 Q44 50 78 86 T146 96" fill="none" stroke="#cc785c" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-      </g>
-    </svg>
-    <span class="brand-name">Ink<span class="accent">Mark</span></span>
-  </a>
+  <div class="sidebar-header">
+    <a href="#" class="brand" id="brand-home" aria-label="InkMark home">
+      <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true">
+        <rect width="256" height="256" rx="48" fill="var(--surface-card)"/>
+        <g transform="translate(40 36)">
+          <rect x="0" y="0" width="148" height="184" rx="10" fill="var(--canvas)" stroke="currentColor" stroke-width="10"/>
+          <line x1="22" y1="148" x2="126" y2="148" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+          <line x1="22" y1="166" x2="96" y2="166" stroke="currentColor" stroke-width="6" stroke-linecap="round" opacity="0.18"/>
+          <path d="M14 92 Q44 50 78 86 T146 96" fill="none" stroke="#cc785c" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <span class="brand-name">Ink<span class="accent">Mark</span></span>
+    </a>
+    <button class="icon-btn" id="sidebar-hide-btn" type="button" aria-label="Hide sidebar" title="Hide sidebar (⌘\)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+  </div>
 
-  <div class="sidebar-section" style="flex: 1; min-height: 0;">
+  <div class="sidebar-section">
     <div class="sidebar-label">Outline</div>
     <nav id="toc" aria-label="Table of contents"></nav>
   </div>
@@ -53,16 +58,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
       <span>New document</span>
     </button>
-    <button class="side-btn" id="btn-install" type="button" hidden>
+    <button class="side-btn" id="btn-install" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      <span>Install app</span>
+      <span id="btn-install-label">Install app</span>
     </button>
   </div>
 </aside>
 
 <main>
   <div class="doc">
-    <textarea id="textarea" spellcheck="true" placeholder="# Title&#10;&#10;Start writing..."></textarea>
+    <div class="write-editor" id="write-editor"></div>
     <div class="source-pane">
       <div class="line-gutter" id="line-gutter"></div>
       <textarea id="source-textarea" spellcheck="false"></textarea>
